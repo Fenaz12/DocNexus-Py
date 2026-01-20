@@ -1,0 +1,26 @@
+CREATE TABLE IF NOT EXISTS user_files (
+    id SERIAL PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id),
+    filename VARCHAR(255) NOT NULL,
+    file_path TEXT NOT NULL,
+    file_size BIGINT,
+    status VARCHAR(50) DEFAULT 'queued', -- queued, processing, completed, failed
+    stage VARCHAR(50) DEFAULT 'init',    -- conversion, chunking, vectorization
+    job_stats JSONB DEFAULT '{}'::jsonb,
+    chunk_count INT DEFAULT 0,
+    vector_count INT DEFAULT 0,
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+TODO: 
+Token count, Summarize queries
+Show thinking steps when chatting
+Show images in the chat
+
+
+Login Demo acc:
+demo@docnexus.com 
+demo123
