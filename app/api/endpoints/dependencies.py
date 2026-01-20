@@ -1,15 +1,15 @@
+# app/api/dependencies.py
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-import os
+from app.core.config import settings 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production-use-env-var")
-ALGORITHM = "HS256"
-
 async def get_current_user_id(token: str = Depends(oauth2_scheme)) -> str:
-    """Extract and verify user ID from JWT token"""
+    """
+    Validates the token and returns the user_id.
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -17,7 +17,11 @@ async def get_current_user_id(token: str = Depends(oauth2_scheme)) -> str:
     )
     
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token, 
+            settings.JWT_SECRET, 
+            algorithms=[settings.JWT_ALGORITHM]
+        )
         user_id: str = payload.get("sub")
         if user_id is None:
             raise credentials_exception
