@@ -2,6 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 class Settings(BaseSettings):
+    PORT: str
 
     #Ingestion Settings
     BASE_UPLOAD_DIR: Path = Path("data/uploads")
@@ -52,8 +53,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
             env_file=ENV_PATH, 
-            env_file_encoding='utf-8',
-            extra='ignore'
+            env_file_encoding='utf-8'
         )
 
 settings = Settings()

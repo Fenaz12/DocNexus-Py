@@ -1,19 +1,27 @@
-# app/main.py
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg_pool import AsyncConnectionPool
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver 
+
 from app.core.config import settings
 from app.api.router import api_router
+from app.services.vector_store import get_vector_store_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🚀 Starting Application...")
 
-    # 2. Lazy Load Postgres (Don't crash if it fails)
+    # 1. Initialize Vector Store (Milvus)
+    # CHANGE 2: Call the function to get the instance
+    print("🔌 Checking Vector Store connection...")
     try:
-        print("🏊 Creating Database Pool...")
+        get_vector_store_service().ensure_vectoredb_exists()
+    except Exception as e:
+        print(f"⚠️ Warning: Vector Store setup failed (Check Milvus Connection): {e}")
+
+    # 2. Initialize Postgres Pool
+    print("🏊 Creating Database Pool...")
+    try:
         app.state.pool = AsyncConnectionPool(
             conninfo=settings.DB_URI,
             max_size=20,
@@ -22,22 +30,30 @@ async def lifespan(app: FastAPI):
         )
         await app.state.pool.open()
         
+        # 3. Setup Checkpointer (Create tables if not exist)
         checkpointer = AsyncPostgresSaver(app.state.pool)
         await checkpointer.setup()
-        print("✅ Database Connected!")
+        
+        print("✅ All systems ready!")
+        
+        yield 
         
     except Exception as e:
+        print(f"❌ Startup Error: {e}")
+        # We yield here so the app doesn't crash immediately, giving you a chance to see the logs
+        yield
+        
+    finally:
+        # Cleanup
+        print("🛑 Shutting down...")
+        if hasattr(app.state, "pool"):
+            await app.state.pool.close()
+        print("👋 Goodbye!")
 
-        print(f"⚠️ Startup Warning: DB connection failed: {e}")
-    print("✅ Server is ready!")
-    yield 
-    
-    print("🛑 Shutting down...")
-    if hasattr(app.state, "pool"):
-        await app.state.pool.close()
-
+# Initialize the app with the lifespan logic
 app = FastAPI(lifespan=lifespan)
 
+# Add CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -46,8 +62,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register your routes
 app.include_router(api_router)
 
 @app.get("/")
 def health_check():
-    return {"status": "running"}
+    return {"status": "running", "env": "production"}
