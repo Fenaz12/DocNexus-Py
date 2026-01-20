@@ -4,7 +4,7 @@ from pathlib import Path
 import time
 
 from fastapi import UploadFile
-
+from functools import lru_cache
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.base_models import InputFormat 
 from docling.datamodel.pipeline_options import (
@@ -23,7 +23,7 @@ from langchain_core.documents import Document
 from fastapi import Depends
 
 from app.core.config import settings
-from app.services.vector_store import vector_store_service
+from app.services.vector_store import get_vector_store_service, VectorStoreService
 
 class IngestionService:
     ALLOWED_EXTENSIONS = {
@@ -224,7 +224,8 @@ class IngestionService:
 
 
     #Entire Pipleine
-    def run_ingestion_pipeline(self, filepaths: list[Path], user_id:str):
+    def run_ingestion_pipeline(self, filepaths: list[Path], user_id:str,
+                               vector_service: VectorStoreService = Depends(get_vector_store_service)):
         """
         docling -> hybridchunking -> vectordatabase
         """
@@ -232,9 +233,11 @@ class IngestionService:
         chunks = self._chunk_documents(conversions, user_id)
 
         if chunks:
-            vector_store_service.add_chunks(chunks)
+            vector_service.add_chunks(chunks)
     
             return len(chunks)
 
 
-ingestion_service = IngestionService()
+@lru_cache()
+def get_ingestion_service():
+    return IngestionService()

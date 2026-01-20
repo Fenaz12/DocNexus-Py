@@ -8,6 +8,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.core.config import settings
 from app.schemas.milvus_schema import get_rag_collection_schema
+from functools import lru_cache
+
 
 class VectorStoreService:
     def __init__(self):
@@ -341,4 +343,6 @@ class VectorStoreService:
             base_compressor=compressor, base_retriever=retriever
         )
 
-vector_store_service = VectorStoreService()
+@lru_cache()
+def get_vector_store_service():
+    return VectorStoreService()

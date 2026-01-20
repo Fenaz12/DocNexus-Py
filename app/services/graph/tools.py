@@ -1,5 +1,5 @@
 from langchain.tools import tool, ToolRuntime
-from app.services.vector_store import vector_store_service
+from app.services.vector_store import get_vector_store_service
 from dataclasses import dataclass
 
 @dataclass
@@ -15,10 +15,11 @@ def get_retrievel_tool(query: str, runtime: ToolRuntime[UserContext]) -> str:
     """
     # Access user_id from runtime context
     user_id = runtime.context.user_id
+    service = get_vector_store_service()
     
     print(f"🔍 Tool Execution: Searching docs for User {user_id}...")
     
-    retriever = vector_store_service.get_retreiver(user_id)
+    retriever = service.get_retreiver(user_id)
     docs = retriever.invoke(query)
     
     if not docs:

@@ -3,20 +3,21 @@ from fastapi import APIRouter, File, UploadFile, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi import Depends
 from app.api.endpoints.dependencies import get_current_user_id
-from app.services.ingestion import ingestion_service
+from app.services.ingestion import get_ingestion_service, IngestionService
 from app.services.tasks import task_ingest_files
 import traceback
 from celery.result import AsyncResult
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.services.dbservice import file_db
-from app.services.vector_store import vector_store_service
+from app.services.vector_store import get_vector_store_service, VectorStoreService
 router = APIRouter()
 
 @router.post("/upload/")
 async def create_upload_files(
     files: Annotated[list[UploadFile], File(description="Multiple files as UploadFile")],
-    user_id: str = Depends(get_current_user_id)
+    user_id: str = Depends(get_current_user_id),
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
 ):
     for file in files:
         if not ingestion_service.validate_file(file.filename):
@@ -203,21 +204,14 @@ async def get_file_metadata(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to fetch metadata: {str(e)}")
 
-@router.get("/chunks/")
-async def get_user_chunks(
-    user_id: str = Depends(get_current_user_id)
-):
-    """Get all chunks for the current user"""
-    # TODO: Implement this when you add chunk retrieval
-    return {"chunks": [], "message": "To be implemented"}
-
-
 
 @router.get("/{file_id}/chunks")
 async def get_file_chunks(
     file_id: int,
     user_id: str = Depends(get_current_user_id),
-    limit: int = 1000
+    limit: int = 1000,
+    vector_service: VectorStoreService = Depends(get_vector_store_service)
+
 ):
     """Get all chunks for a specific file from vector store"""
     print(f"🔍 Endpoint hit: file_id={file_id}, user_id={user_id}")
@@ -242,7 +236,7 @@ async def get_file_chunks(
         
         # Query by file_id (unique)
         print(f"🔍 Querying vector store for file_id={file_id}")
-        chunks = vector_store_service.get_chunks_by_file_id(
+        chunks = vector_service.get_chunks_by_file_id(
             user_id=user_id,
             file_id=file_id,
             limit=limit

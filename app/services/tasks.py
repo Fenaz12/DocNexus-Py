@@ -1,6 +1,6 @@
 from app.core.celery_app import celery_app
-from app.services.ingestion import ingestion_service
-from app.services.vector_store import vector_store_service
+from app.services.ingestion import get_ingestion_service
+from app.services.vector_store import get_vector_store_service
 from app.services.dbservice import file_db
 
 from pathlib import Path
@@ -79,6 +79,11 @@ def extract_docling_stats(conversions: dict):
 
 @celery_app.task(bind=True)
 def task_ingest_files(self, file_paths_str: list[str], file_ids: list[int], user_id: str):
+    # CHANGE 2: Initialize the services HERE, inside the task
+    # This ensures they only load when the worker actually starts processing a job
+    ingestion_service = get_ingestion_service()
+    vector_store_service = get_vector_store_service()
+
     path_to_db_id = {}
     filename_to_db_id = {}
     real_paths = [Path(p) for p in file_paths_str]
@@ -91,21 +96,19 @@ def task_ingest_files(self, file_paths_str: list[str], file_ids: list[int], user
         print(f"❌ DB Error: {e}")
         return {"status": "failed", "error": "Could not initialize database records"}
     
-    # Track stats per file
     files_stats = {filename: {'partitioning': None, 'chunking': None, 'vectorization': None} 
                    for filename in filename_to_db_id.keys()}
 
     print(f"👷 Worker received {len(file_paths_str)} files to process.")
-    print(f"📋 File IDs: {file_ids}")
+    
     try:
-        # QUEUED
         self.update_state(
             state='PROGRESS',
             meta={
                 'current_stage': 'queued', 
                 'progress': 10, 
                 'status': 'Files queued for processing',
-                'files_stats': files_stats  # ✅ Per-file stats in metadata
+                'files_stats': files_stats
             }
         )
         
@@ -120,17 +123,14 @@ def task_ingest_files(self, file_paths_str: list[str], file_ids: list[int], user
             }
         )
 
+        # Now we use the local 'ingestion_service' variable we created above
         conversions = ingestion_service.docling_conversions(real_paths)
         conversions_stats = extract_docling_stats(conversions)
 
-        # Update each file's stats individually
         for filename, file_data in conversions_stats.items():
             fid = filename_to_db_id[filename]
-            
-            # Update in-memory tracking
             files_stats[filename]['partitioning'] = file_data['stats']
             
-            # Update DB with individual stats
             job_stats = {
                 'partitioning': file_data['stats'],
                 'chunking': None,
@@ -144,7 +144,7 @@ def task_ingest_files(self, file_paths_str: list[str], file_ids: list[int], user
                 'current_stage': 'partitioning', 
                 'progress': 40, 
                 'status': 'Partitioning complete',
-                'files_stats': files_stats  # ✅ Now has individual partitioning stats
+                'files_stats': files_stats 
             }
         )
 
@@ -164,7 +164,6 @@ def task_ingest_files(self, file_paths_str: list[str], file_ids: list[int], user
         
         chunks = ingestion_service.chunk_documents(conversions, user_id, filename_to_db_id)
         
-        # Group chunks by filename
         chunks_by_filename = {}
         for chunk in chunks:
             source_path = Path(chunk.metadata['source'])
@@ -173,7 +172,6 @@ def task_ingest_files(self, file_paths_str: list[str], file_ids: list[int], user
                 chunks_by_filename[filename] = []
             chunks_by_filename[filename].append(chunk)
 
-        # Update each file's chunking stats
         for filename, fid in filename_to_db_id.items():
             file_chunks = chunks_by_filename.get(filename, [])
             
@@ -182,14 +180,12 @@ def task_ingest_files(self, file_paths_str: list[str], file_ids: list[int], user
                 total_chars = sum(len(c.page_content) for c in file_chunks)
                 avg_size = total_chars // len(file_chunks)
             
-            # Update in-memory tracking
             files_stats[filename]['chunking'] = {
                 'atomic_elements': files_stats[filename]['partitioning']['total_elements_count'],
                 'chunks_created': len(file_chunks),
                 'avg_chunk_size': avg_size
             }
             
-            # Update DB
             job_stats = {
                 'partitioning': files_stats[filename]['partitioning'],
                 'chunking': files_stats[filename]['chunking'],
@@ -219,18 +215,16 @@ def task_ingest_files(self, file_paths_str: list[str], file_ids: list[int], user
         )
         
         if chunks:
+            # Using the local vector_store_service instance
             vector_store_service.add_chunks(chunks)
 
-        # Update each file's vectorization stats
         for filename, fid in filename_to_db_id.items():
             file_chunks = chunks_by_filename.get(filename, [])
             
-            # Update in-memory tracking
             files_stats[filename]['vectorization'] = {
                 'vectors_created': len(file_chunks)
             }
             
-            # Update DB
             job_stats = {
                 'partitioning': files_stats[filename]['partitioning'],
                 'chunking': files_stats[filename]['chunking'],
@@ -243,7 +237,7 @@ def task_ingest_files(self, file_paths_str: list[str], file_ids: list[int], user
             "processed_count": len(chunks),
             "files": file_paths_str,
             "user_id": user_id,
-            "files_stats": files_stats  # ✅ Final per-file stats
+            "files_stats": files_stats 
         }
 
     except Exception as e:
