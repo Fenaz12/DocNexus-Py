@@ -338,10 +338,8 @@ class VectorStoreService:
             }
         )
 
-        compressor = FlashrankRerank(model="ms-marco-MiniLM-L-12-v2", top_n=5)
-        return ContextualCompressionRetriever(
-            base_compressor=compressor, base_retriever=retriever
-        )
+        return retriever
+
 
 @lru_cache()
 def get_vector_store_service():
